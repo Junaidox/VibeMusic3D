@@ -2,8 +2,7 @@ name: Build VibeMusic3D APK
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -12,7 +11,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -28,83 +26,55 @@ jobs:
         with:
           packages: ""
 
-      - name: Accept Android licenses
-        shell: bash
-        run: |
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses > /dev/null 2>&1 || true
 
-      - name: Install Android SDK packages
-        shell: bash
+      - name: Install Android SDK 37
         run: |
           set -e
-
-          sdkmanager \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
+          sdkmanager "platform-tools" "platforms;android-37" "build-tools;36.0.0"
 
       - name: Extract VibeMusic3D project
-        shell: bash
         run: |
           set -e
-
           rm -rf extracted
-
           unzip -q VibeMusic3D_Final.zip -d extracted
 
-          echo "Extracted project:"
-          find extracted -maxdepth 3 -type f | head -100
-
-      - name: Locate Android project
+      - name: Locate and patch compileSdk
         shell: bash
         run: |
           set -e
-
-          PROJECT_DIR=""
-
-          while IFS= read -r file; do
-            PROJECT_DIR="$(dirname "$file")"
-            break
-          done < <(
-            find extracted \
-              -type f \
-              \( -name "settings.gradle.kts" -o -name "settings.gradle" \) \
-              -print
-          )
-
+          PROJECT_DIR="$(find extracted -type f \( -name 'settings.gradle.kts' -o -name 'settings.gradle' \) -print -quit | xargs -r dirname)"
           if [ -z "$PROJECT_DIR" ]; then
-            echo "ERROR: Android project not found."
+            echo "ERROR: Android project not found"
             exit 1
           fi
 
-          echo "Android project directory: $PROJECT_DIR"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Project: $PROJECT_DIR"
+
+          echo "compileSdk before patch:"
+          grep -RIn --include='*.gradle' --include='*.gradle.kts' --include='*.toml' 'compileSdk' "$PROJECT_DIR" || true
+
+          find "$PROJECT_DIR" -type f \( -name '*.gradle' -o -name '*.gradle.kts' -o -name '*.toml' \) -print0 |
+            xargs -0 -r sed -i -E \
+              -e 's/(compileSdk[[:space:]]*=[[:space:]]*)36/\137/g' \
+              -e 's/(compileSdk[[:space:]]+)36/\137/g'
+
+          echo "compileSdk after patch:"
+          grep -RIn --include='*.gradle' --include='*.gradle.kts' --include='*.toml' 'compileSdk' "$PROJECT_DIR" || true
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "9.7.0"
 
-      - name: Check Gradle
-        run: |
-          java -version
-          gradle --version
-
       - name: Build Debug APK
         working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
-        run: |
-          set -e
-          gradle :app:assembleDebug --no-daemon --stacktrace
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
 
       - name: Show generated APK
-        shell: bash
-        run: |
-          echo "Generated APK:"
-          find "${PROJECT_DIR}/app/build/outputs" \
-            -type f \
-            -name "*.apk" \
-            -print
+        run: find "${PROJECT_DIR}/app/build/outputs" -type f -name "*.apk" -print
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
