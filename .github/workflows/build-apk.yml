@@ -29,10 +29,15 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | sdkmanager --licenses > /dev/null 2>&1 || true
 
-      - name: Install Android SDK 37
+      - name: Install Android SDK 37 Preview
+        shell: bash
         run: |
           set -e
-          sdkmanager "platform-tools" "platforms;android-37" "build-tools;36.0.0"
+          echo "Checking preview package availability..."
+          sdkmanager --list --channel=3 | grep -E 'platforms;android-37( |$)' || true
+          echo "Installing Android 17 / API 37 platform from preview channel..."
+          sdkmanager --channel=3 --install "platforms;android-37"
+          sdkmanager --install "platform-tools" "build-tools;36.0.0"
 
       - name: Extract VibeMusic3D project
         run: |
@@ -49,7 +54,6 @@ jobs:
             echo "ERROR: Android project not found"
             exit 1
           fi
-
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           echo "Project: $PROJECT_DIR"
 
